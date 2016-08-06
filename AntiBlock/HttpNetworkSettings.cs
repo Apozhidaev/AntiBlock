@@ -17,7 +17,6 @@ namespace AntiBlock
         public string Accept { get; set; }
         public string AcceptLanguage { get; set; }
         public int Timeout { get; set; }
-        public int Interval { get; set; }
         public IProxyProvider ProxyProvider { get; set; }
         public string[] BadContentPatterns { get; set; }
         public string[] BlokedPagePatterns { get; set; }

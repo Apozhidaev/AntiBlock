@@ -1,6 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -11,8 +11,6 @@ namespace AntiBlock
 {
     public class HttpNetwork
     {
-        private int _delay;
-        private readonly int _interval;
         private readonly IProxyProvider _proxyProvider;
         private readonly string[] _badContentPatterns;
         private readonly string[] _blokedPagePatterns;
@@ -21,31 +19,25 @@ namespace AntiBlock
         public HttpNetwork(HttpNetworkSettings settings)
         {
             _settings = settings;
-            _interval = settings.Interval;
             _proxyProvider = settings.ProxyProvider;
             _badContentPatterns = settings.BadContentPatterns;
             _blokedPagePatterns = settings.BlokedPagePatterns;
         }
 
-        public async Task<HttpResponseMessage> GetAsync(string url)
+        public async Task<HttpResponseMessage> GetAsync(string url, params string[] contentPatterns)
         {
-            using (var clientPro = await CreateClient())
+            using (var client = await CreateClient())
             {
-                if (_interval > 0)
-                {
-                    _delay += _interval;
-                    await Task.Delay(_delay);
-                }
                 try
                 {
                     var source = new CancellationTokenSource(_settings.Timeout);
-                    var response = await clientPro.GetAsync(url, source.Token);
+                    var response = await client.GetAsync(url, source.Token);
                     var content = await response.Content.ReadAsStringAsync();
                     if (IsBlocked(content))
                     {
-                        throw new BlockingException(clientPro.BaseAddress.Host, clientPro.Identity?.Proxy.Host ?? "LocalIPAddress");
+                        throw new BlockingException(client.BaseAddress.Host, client.Identity?.Proxy.Host ?? "LocalIPAddress");
                     }
-                    if (IsBadProxy(content))
+                    if (IsBadProxy(content, contentPatterns))
                     {
                         throw new ContentException("The response content isn't correct (bad proxy)", url, content);
                     }
@@ -55,8 +47,8 @@ namespace AntiBlock
                 {
                     if (_proxyProvider != null)
                     {
-                        _proxyProvider.Remove(clientPro.Identity, e is BlockingException || e is ContentException);
-                        return await GetAsync(url);
+                        _proxyProvider.Remove(client.Identity, e is BlockingException || e is ContentException);
+                        return await GetAsync(url, contentPatterns);
                     }
                     throw;
                 }
@@ -81,9 +73,10 @@ namespace AntiBlock
             return _blokedPagePatterns.Any(pattern => Regex.IsMatch(content, pattern, RegexOptions.IgnoreCase));
         }
 
-        private bool IsBadProxy(string content)
+        private bool IsBadProxy(string content, IEnumerable<string> contentPatterns)
         {
-            return _badContentPatterns.Any(pattern => Regex.IsMatch(content, pattern, RegexOptions.IgnoreCase));
+            return _badContentPatterns.Any(pattern => Regex.IsMatch(content, pattern, RegexOptions.IgnoreCase)) 
+                || contentPatterns.Any(pattern => !Regex.IsMatch(content, pattern, RegexOptions.IgnoreCase));
         }
     }
 }
